@@ -2,7 +2,7 @@ name: CI - Build and Test
 
 on:
   push:
-    branches: [ main , develop ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
@@ -24,8 +24,29 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
-    - name: Build with Gradle
-      run: ./gradlew build --no-daemon
+    - name: Build with Gradle (without tests)
+      run: ./gradlew build -x test --no-daemon
       
-    - name: Run tests
+    - name: Run tests with Testcontainers
       run: ./gradlew test --no-daemon
+      env:
+        TESTCONTAINERS_RYUK_DISABLED: true
+        TESTCONTAINERS_CHECKS_DISABLE: true
+        
+    - name: Generate test coverage report
+      run: ./gradlew jacocoTestReport --no-daemon
+      if: success()
+      
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: build/test-results/test/
+        
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: coverage-report
+        path: build/jacocoHtml/
