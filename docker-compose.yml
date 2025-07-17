@@ -1,4 +1,23 @@
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: always
+    command:
+      - --config=/etc/otelcol-contrib/otel-collector.yml
+    volumes:
+      - ./docker/collector/otel-collector.yml:/etc/otelcol-contrib/otel-collector.yml
+    ports:
+      - "1888:1888" # pprof extension
+      - "8888:8888" # Prometheus metrics exposed by the collector
+      - "8889:8889" # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP http receiver
+      - "55679:55679" # zpages extension
+    
+    depends_on:
+      - zipkin-all-in-one
+
   postgres:
     image: postgres:15-alpine
     container_name: user-service-postgres
@@ -11,18 +30,61 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - user-service-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U userservice -d userservice"]
       interval: 30s
       timeout: 10s
       retries: 3
 
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: always
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yml" ]
+    volumes:
+      - ./docker/tempo/tempo.yml:/etc/tempo.yml
+    ports:
+      - "3200:3200"   # tempo
+      - "4317"  # otlp grpc
+    
+  grafana:
+    container_name: grafana
+    image: grafana/grafana
+#    volumes:
+#      - ./docker/grafana/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    ports:
+      - "3000:3000"
+    
+
+  # Jaeger
+  # jaeger-all-in-one:
+  #   container_name: jaeger
+  #   image: jaegertracing/all-in-one:latest
+  #   restart: always
+  #   environment:
+  #     - COLLECTOR_OTLP_ENABLED=true
+  #   ports:
+  #     - "16686:16686"
+  #     - "14268"
+  #     - "14250"
+    
+  # Zipkin
+  zipkin-all-in-one:
+    container_name: zipkin
+    image: openzipkin/zipkin:latest
+    restart: always
+    ports:
+      - "9411:9411"
+    
 volumes:
   postgres_data:
     driver: local
-
-networks:
-  user-service-network:
-    driver: bridge
