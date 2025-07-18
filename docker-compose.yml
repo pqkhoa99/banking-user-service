@@ -1,4 +1,35 @@
 services:
+
+  user-service:
+    build: .
+    image: user-service
+    container_name: user-service
+    mem_limit: 512m
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - LOG_LEVEL=INFO
+      - DATA_SOURCE_URL=jdbc:postgresql://postgres:5432/userservice
+      - DATA_SOURCE_USERNAME=userservice
+      - DATA_SOURCE_PASSWORD=userservice
+      - DATA_SOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      # OpenTelemetry Java Agent Configuration
+      - OTEL_SERVICE_NAME=user-service
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=user-service,service.version=0.0.1
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=otlp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - user-service-network
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     restart: always
@@ -14,9 +45,10 @@ services:
       - "4317:4317" # OTLP gRPC receiver
       - "4318:4318" # OTLP http receiver
       - "55679:55679" # zpages extension
-    
     depends_on:
       - zipkin-all-in-one
+    networks:
+      - user-service-network
 
   postgres:
     image: postgres:15-alpine
@@ -35,6 +67,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - user-service-network
 
   prometheus:
     image: prom/prometheus
@@ -46,6 +80,8 @@ services:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
+    networks:
+      - user-service-network
 
   tempo:
     image: grafana/tempo:latest
@@ -55,6 +91,8 @@ services:
     ports:
       - "3200:3200"   # tempo
       - "4317"  # otlp grpc
+    networks:
+      - user-service-network
     
   grafana:
     container_name: grafana
@@ -63,19 +101,23 @@ services:
 #      - ./docker/grafana/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
     ports:
       - "3000:3000"
+    networks:
+      - user-service-network
     
 
   # Jaeger
-  # jaeger-all-in-one:
-  #   container_name: jaeger
-  #   image: jaegertracing/all-in-one:latest
-  #   restart: always
-  #   environment:
-  #     - COLLECTOR_OTLP_ENABLED=true
-  #   ports:
-  #     - "16686:16686"
-  #     - "14268"
-  #     - "14250"
+  jaeger-all-in-one:
+    container_name: jaeger
+    image: jaegertracing/all-in-one:latest
+    restart: always
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+      - "14268"
+      - "14250"
+    networks:
+      - user-service-network
     
   # Zipkin
   zipkin-all-in-one:
@@ -84,7 +126,13 @@ services:
     restart: always
     ports:
       - "9411:9411"
+    networks:
+      - user-service-network
     
 volumes:
   postgres_data:
     driver: local
+
+networks:
+  user-service-network:
+    driver: bridge
